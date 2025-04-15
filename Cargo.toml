@@ -5,9 +5,35 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
+rand = "0.8"
+ctr = "0.9"
+cipher = { version = "0.4", features = ["std"] }
+aes = "0.8"
+generic-array = "0.14"
+scrypt = "0.11.0"
+sha2 = "0.10.8"                                    # For hashing
+thiserror = "1.0.50"
+pbkdf2 = { version = "0.12.2", features = ["simple"] }
+aes-ctr = "0.6"
+chrono = "0.4"
+tempfile = "3.9"
+uuid = { version = "1.7", features = ["v4"] }
 clap = { version = "4.5", features = ["derive"] }  # CLI argument parsing
 bip39 = { version = "2.0", features = ["rand"] }   # BIP-39 mnemonic generation
 anyhow = "1.0"                                     # Error handling
+serde = { version = "1.0", features = ["derive"] } # Serialization
+serde_json = "1.0"                                # JSON support
+hkdf = "0.12"                                     # For key derivation
+hmac = "0.12"                                     # For HMAC operations
+
+blst = { version = "0.3.11", features = ["portable"] } # BLS12-381 cryptography
+hex = "0.4"                                       # Hex encoding/decoding
+regex = "1.11.1"
+
+# Ethereum 2.0 dependencies from official Lighthouse repository
+eth2_key_derivation = { git = "https://github.com/sigp/lighthouse", tag = "v5.3.0" }
+eth2_wallet = { git = "https://github.com/sigp/lighthouse", tag = "v5.3.0" }
+types = { git = "https://github.com/sigp/lighthouse", tag = "v5.3.0" }
 
 [dev-dependencies]
 assert_cmd = "2.0"    # For CLI integration testing

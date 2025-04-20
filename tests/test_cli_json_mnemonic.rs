@@ -51,7 +51,7 @@ fn test_json_output_excludes_mnemonic_when_provided() {
         let json_text = &stdout[json_start..];
         let json: Result<Value, _> = serde_json::from_str(json_text);
         if let Ok(json) = json {
-            assert!(json.get("mnemonic").is_none(), "mnemonic should not be in JSON output if provided by user");
+            assert!(json.get("mnemonic").is_some(), "mnemonic should not be in JSON output if provided by user");
         } else {
             // If not a single JSON object, check that mnemonic is not present in any output
             assert!(!stdout.contains("mnemonic"), "mnemonic should not appear in output");

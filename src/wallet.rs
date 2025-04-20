@@ -34,10 +34,11 @@ pub enum OutputMode {
     Files,
     /// Return artifacts as JSON structure
     Json,
+
 }
 
 /// KDF type for keystore encryption
-#[derive(Debug, Clone, ValueEnum, Default, PartialEq)]
+#[derive(Debug, Clone, ValueEnum, Default, PartialEq, Serialize)] // Added Serialize
 pub enum KdfMode {
     /// Use scrypt KDF (more secure, slower)
     #[default]
@@ -53,8 +54,10 @@ pub struct WalletParams {
     pub mnemonic: Option<String>,
     /// Amount of ETH to stake (32-2048)
     pub eth_amount: u64,
-    /// Staker's withdrawal address (0x02 credentials)
+    /// Staker's withdrawal address
     pub withdrawal_address: String,
+    /// Withdrawal credential type (determines amount validation)
+    pub withdrawal_credential_type: crate::WithdrawalCredentialType, // Use type from main.rs
     /// Password for encrypting the keystore
     pub password: Option<String>,
     /// Target network
@@ -109,14 +112,9 @@ impl WalletParams {
     }
 
     /// Validate all wallet parameters before generation
+    /// NOTE: Amount validation is now solely handled in main.rs based on CLI context
     pub fn validate(&self) -> Result<()> {
-        // Validate ETH amount
-        if self.eth_amount < 32 || self.eth_amount > 2048 {
-            return Err(anyhow::anyhow!("ETH amount must be between 32 and 2048"));
-        }
-        if self.eth_amount % 32 != 0 {
-            return Err(anyhow::anyhow!("ETH amount must be a multiple of 32"));
-        }
+        // Amount validation removed - handled in main.rs
 
         // Validate withdrawal address
         if !self.withdrawal_address.starts_with("0x") {
@@ -170,6 +168,7 @@ mod tests {
             mnemonic: None,
             eth_amount: 32,
             withdrawal_address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F".to_string(),
+            withdrawal_credential_type: crate::WithdrawalCredentialType::Pectra, // Add default type for tests
             password: Some("testpassword123".to_string()),
             chain: Chain::Hoodie,
             output_dir: PathBuf::from("./output"),
@@ -179,28 +178,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_eth_amount_validation() -> Result<()> {
-        let mut params = create_test_params();
-
-        // Valid amounts
-        params.eth_amount = 32;
-        assert!(params.validate().is_ok());
-        params.eth_amount = 64;
-        assert!(params.validate().is_ok());
-        params.eth_amount = 2048;
-        assert!(params.validate().is_ok());
-
-        // Invalid amounts
-        params.eth_amount = 31;
-        assert!(params.validate().is_err());
-        params.eth_amount = 2049;
-        assert!(params.validate().is_err());
-        params.eth_amount = 33;
-        assert!(params.validate().is_err());
-
-        Ok(())
-    }
+    // Removed test_eth_amount_validation as this logic is now solely handled in main.rs and tested via integration tests
 
     #[test]
     fn test_withdrawal_address_validation() -> Result<()> {
@@ -327,4 +305,3 @@ mod tests {
         Ok(())
     }
 }
-

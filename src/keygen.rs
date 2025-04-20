@@ -32,12 +32,12 @@ pub fn get_mnemonic(mnemonic_str: Option<String>) -> Result<Mnemonic> {
 /// * `validator_index` - The validator index (i) for the EIP-2334 path
 pub fn generate_validator_keys(mnemonic: &Mnemonic, validator_index: u32) -> Result<ValidatorKeyPair> {
     // Debug: Print the mnemonic phrase to verify it's consistent
-    println!("DEBUG: Using mnemonic: {}", mnemonic.to_string());
-    println!("DEBUG: Validator index: {}", validator_index);
-    
+    // println!("DEBUG: Using mnemonic: {}", mnemonic.to_string()); // Commented out
+    // println!("DEBUG: Validator index: {}", validator_index); // Commented out
+
     // Generate seed from mnemonic (empty password)
     let seed = mnemonic.to_seed("");
-    println!("DEBUG: Seed (first 8 bytes): {:?}", &seed[..8]);
+    // println!("DEBUG: Seed (first 8 bytes): {:?}", &seed[..8]); // Commented out
 
     // Create master key from seed using eth2 key derivation
     let master = DerivedKey::from_seed(&seed)

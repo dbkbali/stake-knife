@@ -16,11 +16,15 @@ A command-line tool for Ethereum validator staking operations with secure key ma
 - Batch keystore generation (`--validator-count`)
 - Specific starting index (`--validator-index`)
 - EIP-2334 compliant key derivation
-- Keystore recovery from mnemonic
-- Parameter validation (password length, ETH amount, address format)
-- Dry run mode (`--dry-run`)
+  - Keystore recovery from mnemonic
+  - Selectable withdrawal credential type (`--withdrawal-credential-type` 01/02)
+  - Conditional amount validation based on credential type
+  - Per-validator ETH amounts via `--amounts` flag (for Pectra/02)
+  - Optional structured JSON output including private keys (`--create-deposit-json`)
+  - Parameter validation (password length, ETH amount, address format)
+  - Dry run mode (`--dry-run`)
 
-🛠 In Development:
+  🛠 In Development:
 - Deposit data generation
 
 ## Installation
@@ -71,6 +75,27 @@ stake-knife wallet generate \
   --withdrawal-address 0x... \
   --password yourpassword \
   --dry-run
+
+# Generate multiple validators with specific amounts (Pectra/02) and structured JSON output
+stake-knife wallet generate \
+  --withdrawal-address 0x... \
+  --password yourpassword \
+  --validator-count 3 \
+  --amounts 32,64,2048 \
+  --format json \
+  --create-deposit-json \
+  # --withdrawal-credential-type 02 # This is the default
+
+# Generate single validator with 0x01 credentials (requires exactly 32 ETH)
+stake-knife wallet generate \
+  --withdrawal-address 0x... \
+  --password yourpassword \
+  --validator-count 1 \
+  --eth-amount 32 \
+  --w
+  ithdrawal-credential-type 01 \
+  --format json \
+  --create-deposit-json # Optional, but shows private key if used
 ```
 
 ### Key Derivation
@@ -96,18 +121,23 @@ stake-knife wallet generate \
 |-----------|-------------|----------|------------|
 | `--mnemonic` | Existing 24-word mnemonic | No | 24 words |
 | `--password` | Keystore password | Yes | Min 8 chars |
-| `--eth-amount` | Total ETH amount | Yes | 32-2048 ETH, multiple of 32 |
-| `--withdrawal-address` | Ethereum withdrawal address | Yes | 0x prefix |
-| `--validator-index` | Starting validator index | No | ≥0 |
-| `--validator-count` | Number of validators | No | ≥1 |
-| `--output-dir` | Output directory | No | Valid path |
-| `--format` | Output format (plain/json) | No | plain/json |
+| `--withdrawal-address` | Ethereum withdrawal address | Yes | 0x prefix, 42 chars |
+| `--withdrawal-credential-type` | Credential type (`01` or `02`) | No (defaults to `02`) | `01` or `02` |
+| `--validator-index` | Starting validator index | No (defaults to 0) | ≥0 |
+| `--validator-count` | Number of validators | No (defaults to 1) | ≥1 |
+| `--eth-amount` | ETH amount per validator | Yes (if `validator-count`=1 OR `--create-deposit-json`=false) | Depends on `--withdrawal-credential-type` (`01`: exactly 32; `02`: 32-2048) |
+| `--amounts` | Comma-separated ETH amounts | Yes (if `validator-count`>1 AND `--create-deposit-json`=true) | List count must match `validator-count`. Each amount depends on `--withdrawal-credential-type` (`01`: exactly 32; `02`: 32-2048) |
+| `--format` | Output format (`files` or `json`) | No (defaults to `files`) | `files` or `json` |
+| `--create-deposit-json` | Output structured JSON with keys | No (defaults to false) | Requires `--format json` |
+| `--output-dir` | Output directory (for `--format files`) | No (defaults to `./output`) | Valid path |
+| `--kdf` | Keystore KDF (`Scrypt` or `Pbkdf2`) | No (defaults to `Scrypt`) | `Scrypt` or `Pbkdf2` |
 | `--dry-run` | Validate without writing files | No | Boolean |
 
 ⚠️ **Important Notes:**
 1. When generating new mnemonics, they are displayed with an IMPORTANT warning - store this securely!
 2. For recovery, you must use the exact same parameters as original generation.
-3. JSON output includes mnemonic when generated (but not when provided).
+3. Both JSON output formats (`--format json` and `--format json --create-deposit-json`) always include the mnemonic seed used (whether generated or provided).
+4. The structured JSON output (`--format json --create-deposit-json`) also includes the **validator private keys**. Handle this output securely.
 
 ## Development Status
 

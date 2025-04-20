@@ -11,7 +11,7 @@ fn test_multiple_validator_keystores() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let output_path = temp_dir.path().to_str().unwrap();
     
-    // Run command to generate 3 validator keystores
+    // Run command to generate 3 validator keystores each with 96ETH
     let mut cmd = Command::cargo_bin("stake-knife")?;
     let output = cmd
         .arg("wallet")
@@ -29,7 +29,7 @@ fn test_multiple_validator_keystores() -> Result<()> {
     
     // Check output contains expected information
     assert!(stdout.contains("Generating validator wallet(s) with:"));
-    assert!(stdout.contains("ETH amount: 96 ETH"));
+    assert!(stdout.contains("ETH amount per validator: 96 ETH")); // Updated string
     assert!(stdout.contains("Validator index: 5"));
     assert!(stdout.contains("Validator count: 3"));
     

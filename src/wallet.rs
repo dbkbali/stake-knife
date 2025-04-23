@@ -18,12 +18,12 @@ pub struct ValidatorKeys {
 }
 
 /// Supported Ethereum networks
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, Serialize)]
 pub enum Chain {
     /// Ethereum mainnet
     Mainnet,
-    /// Hoodie testnet
-    Hoodie,
+    /// Hoodi testnet
+    Hoodi, // Corrected spelling
 }
 
 /// Output format for wallet generation
@@ -52,12 +52,12 @@ pub enum KdfMode {
 pub struct WalletParams {
     /// Optional BIP-39 mnemonic for key derivation
     pub mnemonic: Option<String>,
-    /// Amount of ETH to stake (32-2048)
+    /// Amount of ETH to stake per validator
     pub eth_amount: u64,
     /// Staker's withdrawal address
     pub withdrawal_address: String,
-    /// Withdrawal credential type (determines amount validation)
-    pub withdrawal_credential_type: crate::WithdrawalCredentialType, // Use type from main.rs
+    /// BLS mode (determines withdrawal credential type)
+    pub bls_mode: crate::BlsMode, // Use type from main.rs
     /// Password for encrypting the keystore
     pub password: Option<String>,
     /// Target network
@@ -67,9 +67,6 @@ pub struct WalletParams {
     pub output_dir: PathBuf,
     /// KDF type for keystore encryption
     pub kdf_mode: KdfMode,
-    /// If true, validate but don't generate files
-    #[allow(dead_code)]
-    pub dry_run: bool,
     /// Validator index for key derivation path
     pub validator_index: u32,
 }
@@ -168,12 +165,11 @@ mod tests {
             mnemonic: None,
             eth_amount: 32,
             withdrawal_address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F".to_string(),
-            withdrawal_credential_type: crate::WithdrawalCredentialType::Pectra, // Add default type for tests
+            bls_mode: crate::BlsMode::Pectra, // Add default type for tests
             password: Some("testpassword123".to_string()),
-            chain: Chain::Hoodie,
+            chain: Chain::Hoodi,
             output_dir: PathBuf::from("./output"),
             kdf_mode: KdfMode::Scrypt,
-            dry_run: false,
             validator_index: 0,
         }
     }

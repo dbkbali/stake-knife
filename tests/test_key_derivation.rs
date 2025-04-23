@@ -25,7 +25,7 @@ fn test_consistent_key_derivation() -> Result<()> {
         .arg("wallet")
         .arg("generate")
         .arg("--mnemonic").arg(TEST_MNEMONIC)
-        .arg("--eth-amount").arg("32")
+        .arg("--eth-amounts").arg("32")
         .arg("--withdrawal-address").arg("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
         .arg("--password").arg("testpassword123")
         .arg("--validator-index").arg("5")
@@ -41,7 +41,7 @@ fn test_consistent_key_derivation() -> Result<()> {
         .arg("wallet")
         .arg("generate")
         .arg("--mnemonic").arg(TEST_MNEMONIC)
-        .arg("--eth-amount").arg("32")
+        .arg("--eth-amounts").arg("32")
         .arg("--withdrawal-address").arg("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
         .arg("--password").arg("testpassword123")
         .arg("--validator-index").arg("5")
@@ -110,7 +110,7 @@ fn test_different_indices_different_keys() -> Result<()> {
         .arg("wallet")
         .arg("generate")
         .arg("--mnemonic").arg(TEST_MNEMONIC)
-        .arg("--eth-amount").arg("96") // 3 validators * 32 ETH
+        .arg("--eth-amounts").arg("96") // 3 validators * 32 ETH
         .arg("--withdrawal-address").arg("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
         .arg("--password").arg("testpassword123")
         .arg("--validator-index").arg("5") // Start at index 5

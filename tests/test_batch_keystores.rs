@@ -16,7 +16,7 @@ fn test_multiple_validator_keystores() -> Result<()> {
     let output = cmd
         .arg("wallet")
         .arg("generate")
-        .arg("--eth-amount").arg("96") // 3 validators * 32 ETH
+        .arg("--eth-amounts").arg("96") // 3 validators * 32 ETH
         .arg("--withdrawal-address").arg("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
         .arg("--password").arg("testpassword123")
         .arg("--validator-index").arg("5") // Start at index 5
@@ -85,7 +85,7 @@ fn test_multiple_validator_keystores() -> Result<()> {
     let output = cmd
         .arg("wallet")
         .arg("generate")
-        .arg("--eth-amount").arg("64") // 2 validators * 32 ETH
+        .arg("--eth-amounts").arg("64") // 2 validators * 32 ETH
         .arg("--withdrawal-address").arg("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
         .arg("--password").arg("testpassword123")
         .arg("--validator-index").arg("10") // Start at index 10

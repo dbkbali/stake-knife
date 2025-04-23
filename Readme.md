@@ -46,12 +46,16 @@ stake-knife mnemonic --format json
 
 ### Wallet Generation
 ```sh
-# Generate single validator wallet
+# Generate single validator wallet keystore file - no mnemonic
 stake-knife wallet generate \
   --eth-amount 32 \
   --withdrawal-address 0x... \
   --password yourpassword \
   --output-dir ./keys
+
+- generates only a keys
+
+
 
 # Generate multiple validators (batch mode)
 stake-knife wallet generate \
@@ -156,34 +160,6 @@ cargo test -- --ignored
 # Test specific component
 cargo test test_mnemonic_generation
 ```
-
-## Usage: Two-Step Workflow
-
-### 1. Generate Validator Keystores (Infra Provider)
-```sh
-stake-knife wallet generate \
-  --eth-amount 128
-  --mnemonic "<mnemonic>" \
-  --validator-count 4 \
-  --password <password> \
-  --output-dir ./output
-```
-- Generates 4 validator keystores (indices 0-3) using the given mnemonic each assumed to have a 32 Eth stake.
-- Save the mnemonic securely for future validator/key recovery.
-- **NOTE:** If you do not specify `--mnemonic` and use `--format json`, the generated mnemonic will be included in the JSON output along with a warning. This ensures you have a backup for recovery. If you provide a mnemonic, it is *not* included in the JSON output.
-
-### 2. Generate Deposit Data (Staker or Infra)
-```sh
-stake-knife depositjson \
-  --mnemonic "<mnemonic>" \
-  --validator-index 0 \
-  --validator-count 4 \
-  --withdrawal-address 0x... \
-  --eth-amount 32 \
-  --output-dir ./output
-```
-- Generates deposit_data.json files for indices 0-3 with the specified withdrawal address and amount (in ETH).
-- These files are used for submitting deposits to the Ethereum deposit contract.
 
 ## Project Structure
 

@@ -23,7 +23,7 @@ fn test_keystore_generation_and_recovery() -> Result<()> {
     let output = cmd
         .arg("wallet")
         .arg("generate")
-        .arg("--eth-amount").arg("96") // 3 validators * 32 ETH
+        .arg("--eth-amounts").arg("96") // 3 validators * 32 ETH
         .arg("--withdrawal-address").arg("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
         .arg("--password").arg("testpassword123")
         .arg("--validator-index").arg("5") // Start at index 5
@@ -119,7 +119,7 @@ fn test_keystore_generation_and_recovery() -> Result<()> {
         .arg("wallet")
         .arg("generate")
         .arg("--mnemonic").arg(&mnemonic)
-        .arg("--eth-amount").arg("96") 
+        .arg("--eth-amounts").arg("96") 
         .arg("--withdrawal-address").arg("0x71C7656EC7ab88b098defB751B7401B5f6d8976F")
         .arg("--password").arg("testpassword123")
         .arg("--validator-index").arg("5") // Same index as before

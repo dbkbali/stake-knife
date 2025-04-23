@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use blst::min_pk::SecretKey;
-use sha2::{Sha256, Digest};
+// Removed unused sha2::Sha256 import (it's used inline later)
 use aes::Aes128;
 use aes::cipher::{KeyIvInit, StreamCipher};
 use ctr::Ctr128BE;
@@ -444,7 +444,7 @@ mod tests {
 
             // Create secret key and verify public key matches
             let secret_key = SecretKey::from_bytes(&decrypted_key)
-                .map_err(|e| anyhow!("Failed to create secret key: {:?}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to create secret key: {:?}", e))?;
             let public_key = secret_key.sk_to_pk();
             assert_eq!(
                 hex::encode(public_key.to_bytes()),

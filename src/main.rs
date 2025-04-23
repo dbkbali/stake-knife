@@ -355,6 +355,12 @@ fn main() -> Result<()> {
                             if !all_deposit_data.is_empty() {
                                 println!("Generated {} deposit data file(s)", all_deposit_data.len());
                             }
+                            
+                            // Print the mnemonic for tests that expect it in the output
+                            if !mnemonic_provided {
+                                println!("\n[IMPORTANT] Generated new mnemonic for validator key derivation:\n{}", used_mnemonic);
+                                println!("\nWARNING: NEVER share your mnemonic phrase. Anyone with access to it can control your validators.");
+                            }
 
                             for (i, path) in keystore_paths.iter().enumerate() {
                                 println!("Validator {}: {}", i, path);
@@ -507,6 +513,12 @@ fn main() -> Result<()> {
                         println!("Generated {} validator keystore file(s)", validator_count);
                         if !all_deposit_data.is_empty() {
                             println!("Generated {} deposit data file(s)", all_deposit_data.len());
+                        }
+                        
+                        // Print the mnemonic for tests that expect it in the output
+                        if !mnemonic_provided {
+                            println!("\n[IMPORTANT] Generated new mnemonic for validator key derivation:\n{}", used_mnemonic);
+                            println!("\nWARNING: NEVER share your mnemonic phrase. Anyone with access to it can control your validators.");
                         }
 
                         for (i, path) in keystore_paths.iter().enumerate() {

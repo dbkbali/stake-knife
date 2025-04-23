@@ -37,7 +37,9 @@ fn test_keystore_generation_and_recovery() -> Result<()> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     println!("DEBUG: Command output: {}", stdout);
     
-    let mnemonic_regex = Regex::new(r"\[IMPORTANT\] Generated new mnemonic for validator key derivation:\s*\n([\w\s]+)")?;
+    // Update regex to only capture the 24 words by limiting to a single line
+    // and ensuring we don't capture the WARNING line
+    let mnemonic_regex = Regex::new(r"\[IMPORTANT\] Generated new mnemonic for validator key derivation:\s*\n((?:\w+\s+){23}\w+)")?;
     
     let mnemonic = match mnemonic_regex.captures(&stdout) {
         Some(captures) => {

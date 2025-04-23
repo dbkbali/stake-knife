@@ -17,15 +17,15 @@ A command-line tool for Ethereum validator staking operations with secure key ma
 - Specific starting index (`--validator-index`)
 - EIP-2334 compliant key derivation
   - Keystore recovery from mnemonic
-  - Selectable withdrawal credential type (`--withdrawal-credential-type` 01/02)
+  - Selectable withdrawal credential type (`--bls-mode` 01/02)
   - Conditional amount validation based on credential type
-  - Per-validator ETH amounts via `--amounts` flag (for Pectra/02)
-  - Optional structured JSON output including private keys (`--create-deposit-json`)
+  - Per-validator ETH amounts via `--eth-amounts` flag (for Pectra/02)
+  - Optional structured JSON output including private keys (`--format json`)
   - Parameter validation (password length, ETH amount, address format)
-  - Dry run mode (`--dry-run`)
 
   🛠 In Development:
 - Deposit data generation
+- more testing
 
 ## Installation
 
@@ -45,74 +45,21 @@ stake-knife mnemonic --format json
 ```
 
 ### Wallet Generation
-```sh
-# Generate single validator wallet keystore file - no mnemonic
-stake-knife wallet generate \
-  --eth-amount 32 \
-  --withdrawal-address 0x... \
-  --password yourpassword \
-  --output-dir ./keys
 
-- generates only a keys
-
-
-
-# Generate multiple validators (batch mode)
-stake-knife wallet generate \
-  --eth-amount 96 \  # 3 validators * 32 ETH
-  --withdrawal-address 0x... \
-  --password yourpassword \
-  --validator-index 5 \  # Start at index 5
-  --validator-count 3 \  # Generate 3 validators - eth amount must be a multiple of 32ETH
-  --output-dir ./keys
-
-# JSON output format
-stake-knife wallet generate \
-  --eth-amount 32 \
-  --withdrawal-address 0x... \
-  --password yourpassword \
-  --format json
-
-# Dry run (validate without writing files)
-stake-knife wallet generate \
-  --eth-amount 32 \
-  --withdrawal-address 0x... \
-  --password yourpassword \
-  --dry-run
-
-# Generate multiple validators with specific amounts (Pectra/02) and structured JSON output
-stake-knife wallet generate \
-  --withdrawal-address 0x... \
-  --password yourpassword \
-  --validator-count 3 \
-  --amounts 32,64,2048 \
-  --format json \
-  --create-deposit-json \
-  # --withdrawal-credential-type 02 # This is the default
-
-# Generate single validator with 0x01 credentials (requires exactly 32 ETH)
-stake-knife wallet generate \
-  --withdrawal-address 0x... \
-  --password yourpassword \
-  --validator-count 1 \
-  --eth-amount 32 \
-  --w
-  ithdrawal-credential-type 01 \
-  --format json \
-  --create-deposit-json # Optional, but shows private key if used
-```
+[Wallet Generation Examples](./examples.md)
 
 ### Key Derivation
 - Uses EIP-2334 standard derivation path: `m/12381/3600/i/0/0` where `i` is validator index
 - Same mnemonic + index always produces identical keys
-- Compatible with eth-staking-smith key derivation
+- Compatible with eth-deposit-cli key derivation
 
 ### Recovery Process
-To regenerate lost keystores:
+To regenerate lost keystores use the original command that was utilized to generate the keystores with the same parameters:
+
 ```sh
 stake-knife wallet generate \
   --mnemonic "your original 24 word mnemonic" \
-  --eth-amount 96 \  # Must match original amount
+  --eth-amounts 32,32,32 \  # Must match original amount
   --withdrawal-address 0x... \  # Must match original
   --password yourpassword \  # Must match original
   --validator-index 5 \  # Must match original
@@ -120,28 +67,30 @@ stake-knife wallet generate \
   --output-dir ./recovered_keys
 ```
 
+This will generate 3 recovered keystore files and the deposit data files in the specified output directory.
+
 ### Parameters
 | Parameter | Description | Required | Validation |
 |-----------|-------------|----------|------------|
 | `--mnemonic` | Existing 24-word mnemonic | No | 24 words |
 | `--password` | Keystore password | Yes | Min 8 chars |
 | `--withdrawal-address` | Ethereum withdrawal address | Yes | 0x prefix, 42 chars |
-| `--withdrawal-credential-type` | Credential type (`01` or `02`) | No (defaults to `02`) | `01` or `02` |
+| `--bls-mode` | Credential type (`01` or `02`) | No (defaults to `02`/Pectra) | `01` (Eth1) or `02` (Pectra) |
 | `--validator-index` | Starting validator index | No (defaults to 0) | ≥0 |
 | `--validator-count` | Number of validators | No (defaults to 1) | ≥1 |
-| `--eth-amount` | ETH amount per validator | Yes (if `validator-count`=1 OR `--create-deposit-json`=false) | Depends on `--withdrawal-credential-type` (`01`: exactly 32; `02`: 32-2048) |
-| `--amounts` | Comma-separated ETH amounts | Yes (if `validator-count`>1 AND `--create-deposit-json`=true) | List count must match `validator-count`. Each amount depends on `--withdrawal-credential-type` (`01`: exactly 32; `02`: 32-2048) |
+| `--eth-amounts` | Comma-separated ETH amounts | No for single validator | Each amount depends on `--bls-mode` (`01`: exactly 32; `02`: 32-2048) |
 | `--format` | Output format (`files` or `json`) | No (defaults to `files`) | `files` or `json` |
-| `--create-deposit-json` | Output structured JSON with keys | No (defaults to false) | Requires `--format json` |
 | `--output-dir` | Output directory (for `--format files`) | No (defaults to `./output`) | Valid path |
 | `--kdf` | Keystore KDF (`Scrypt` or `Pbkdf2`) | No (defaults to `Scrypt`) | `Scrypt` or `Pbkdf2` |
-| `--dry-run` | Validate without writing files | No | Boolean |
+| `--chain` | Network chain (`mainnet` or `hoodi`) | No (defaults to `mainnet`) | `mainnet` or `hoodi` |
 
 ⚠️ **Important Notes:**
 1. When generating new mnemonics, they are displayed with an IMPORTANT warning - store this securely!
 2. For recovery, you must use the exact same parameters as original generation.
-3. Both JSON output formats (`--format json` and `--format json --create-deposit-json`) always include the mnemonic seed used (whether generated or provided).
-4. The structured JSON output (`--format json --create-deposit-json`) also includes the **validator private keys**. Handle this output securely.
+3. When using `--format json`, the output includes the mnemonic, keystores, deposit data, and private keys.
+4. When using `--format files`, files are written to the output directory and a summary is printed to stdout.
+5. If `--eth-amounts` is not provided for a single validator, a default of 32 ETH will be used.
+6. If `validator_count > 1`, then `--eth-amounts` must be provided with exactly that many values.
 
 ## Development Status
 
@@ -182,4 +131,4 @@ Pull requests welcome! Please:
 
 ## License
 
-MIT © 2025
+MIT 

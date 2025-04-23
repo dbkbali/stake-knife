@@ -26,12 +26,15 @@ fn test_multiple_validator_keystores() -> Result<()> {
     
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
+    println!("stdout: {}", stdout);
     // Check output contains expected information
-    assert!(stdout.contains("Generating validator wallet(s) with:"));
-    assert!(stdout.contains("ETH amount per validator: 96 ETH")); // Updated string
-    assert!(stdout.contains("Validator index: 5"));
-    assert!(stdout.contains("Validator count: 3"));
+    assert!(stdout.contains("Generated deposit data file:"));
+    assert!(stdout.contains("ETH amounts: 96 ETH")); // Updated string
+    assert!(stdout.contains("keystore-m_12381_3600_5_0_0"));
+    assert!(stdout.contains("keystore-m_12381_3600_6_0_0"));
+    assert!(stdout.contains("keystore-m_12381_3600_7_0_0"));
+    assert!(stdout.contains("Generated 3 validator"));
+    assert!(stdout.contains("Generated 3 deposit data"));
     
     // Give the file system some time to complete writing
     thread::sleep(Duration::from_secs(1));

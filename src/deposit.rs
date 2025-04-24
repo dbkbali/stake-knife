@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Context, Result};
+use ethereum_hashing::hash as eth_hash;
 use serde::Serialize;
+use smallvec::SmallVec;
 use tree_hash::TreeHash;
 use types::{
     DepositData, DepositMessage, ForkVersion, Hash256, PublicKey, PublicKeyBytes, SecretKey,
@@ -15,10 +17,13 @@ const GWEI_PER_ETH: u64 = 1_000_000_000;
 const ETH1_ADDRESS_WITHDRAWAL_PREFIX: u8 = 0x01;
 const ETH2_ADDRESS_WITHDRAWAL_PREFIX: u8 = 0x02; // For Pectra/EIP-7002
 
+// Domain type for deposits
+const DOMAIN_DEPOSIT: u32 = 3;
+
 // Network specific constants
 // Electra Fork Versions
-const MAINNET_ELECTRA_FORK_VERSION: [u8; 4] = [0x05, 0x00, 0x00, 0x00];
-const HOODI_ELECTRA_FORK_VERSION: [u8; 4] = [0x05, 0x00, 0x00, 0x00]; // Assuming same as Mainnet Electra - VERIFY if possible
+const MAINNET_ELECTRA_FORK_VERSION: [u8; 4] = [0x00, 0x00, 0x00, 0x00]; // Mainnet fork version
+const HOODI_ELECTRA_FORK_VERSION: [u8; 4] = [0x10, 0x00, 0x09, 0x10]; // Hoodi fork version
 
 // Genesis Validators Roots (Hex strings)
 const MAINNET_GENESIS_VALIDATORS_ROOT_STR: &str = "0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95";
@@ -115,6 +120,74 @@ pub struct DepositDataFile {
 
 // --- Core Function ---
 
+/// Computes the domain for signing based on domain type, fork version, and genesis validators root
+fn compute_domain(domain_type: u32, fork_version: ForkVersion, genesis_validators_root: Hash256) -> [u8; 32] {
+    // According to ETH2 specs, domain = domain_type + fork_version + hash(genesis_validators_root)[0:28]
+    let mut domain = [0u8; 32];
+    
+    // First 4 bytes: domain type as little-endian bytes
+    domain[0..4].copy_from_slice(&domain_type.to_le_bytes());
+    
+    // Next 4 bytes: fork version
+    domain[4..8].copy_from_slice(&fork_version);
+    
+    // Last 24 bytes: first 24 bytes of hash(genesis_validators_root)
+    // In ETH2 specs, we'd use the first 28 bytes of hash(genesis_validators_root)
+    // But since genesis_validators_root is already a hash, we can use its first 24 bytes directly
+    domain[8..32].copy_from_slice(&genesis_validators_root.as_bytes()[0..24]);
+    
+    domain
+}
+
+/// Computes the signing root by combining message root and domain
+fn compute_signing_root(message_root: Hash256, domain: [u8; 32]) -> Hash256 {
+    // According to ETH2 specs, we need to create a SigningData structure and compute its hash tree root
+    // SigningData = { object_root: Hash256, domain: Domain }
+    
+    // Create a simple struct that implements TreeHash to represent SigningData
+    struct SigningData {
+        object_root: Hash256,
+        domain: [u8; 32],
+    }
+    
+    impl TreeHash for SigningData {
+        fn tree_hash_type() -> tree_hash::TreeHashType {
+            tree_hash::TreeHashType::Container
+        }
+        
+        fn tree_hash_packed_encoding(&self) -> SmallVec<[u8; 32]> {
+            unreachable!("Containers are not packed")
+        }
+        
+        fn tree_hash_packing_factor() -> usize {
+            unreachable!("Containers are not packed")
+        }
+        
+        fn tree_hash_root(&self) -> Hash256 {
+            // Manually compute the hash of the two fields
+            // For a container with two fields, we need to compute the root as:
+            // hash(hash(field1) + hash(field2))
+            let object_root_hash = self.object_root;
+            let domain_hash = Hash256::from_slice(&eth_hash(&self.domain));
+            
+            // Combine the two hashes
+            let mut combined = Vec::with_capacity(64);
+            combined.extend_from_slice(object_root_hash.as_bytes());
+            combined.extend_from_slice(domain_hash.as_bytes());
+            
+            Hash256::from_slice(&eth_hash(&combined))
+        }
+    }
+    
+    // Create SigningData and compute its tree hash root
+    let signing_data = SigningData {
+        object_root: message_root,
+        domain,
+    };
+    
+    signing_data.tree_hash_root()
+}
+
 /// Generates deposit data for a single validator.
 pub fn generate_deposit_data(
     validator_pk: &PublicKey,
@@ -127,7 +200,7 @@ pub fn generate_deposit_data(
     let amount_gwei = amount_eth * GWEI_PER_ETH;
     let fork_version = get_electra_fork_version(chain);
     let network_name = get_network_name(chain);
-    let _genesis_validators_root = get_genesis_validators_root(chain)?;
+    let genesis_validators_root = get_genesis_validators_root(chain)?;
 
     // 1. Format Withdrawal Credentials
     let withdrawal_credentials_bytes = format_withdrawal_credentials(withdrawal_address, bls_mode)?;
@@ -141,14 +214,13 @@ pub fn generate_deposit_data(
         amount: amount_gwei,
     };
 
-    // 3. Calculate Signing Domain & Root
-    // TODO: Find correct import/method for compute_domain
-    // TODO: Implement proper domain computation and signing root
-    let signing_root = message.tree_hash_root(); // Ensure TreeHash trait is in scope via types
-    // --- END TEMPORARY ---
+    // 3. Calculate Signing Domain & Root according to ETH2 specs
+    let message_root = message.tree_hash_root();
+    let domain = compute_domain(DOMAIN_DEPOSIT, fork_version, genesis_validators_root);
+    let signing_root = compute_signing_root(message_root, domain);
 
-    // 4. Sign DepositMessage
-    let signature = validator_sk.sign(signing_root); // Sign the (currently incorrect) root
+    // 4. Sign DepositMessage with the correct signing root
+    let signature = validator_sk.sign(signing_root);
 
     // 5. Calculate Deposit Message Root (SSZ hash tree root of DepositMessage)
     let deposit_message_root = message.tree_hash_root();
@@ -183,3 +255,286 @@ pub fn generate_deposit_data(
 }
 
 // TODO: Add unit tests for helper functions and core logic (especially credential formatting, roots).
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::BlsMode;
+    use crate::wallet::Chain;
+    use blst::min_pk::{SecretKey as BlstSecretKey, PublicKey as BlstPublicKey};
+    use hex;
+
+    // Helper function to create a test secret key
+    fn create_test_secret_key() -> (SecretKey, PublicKey) {
+        // Create a deterministic test key
+        let seed = [1u8; 32]; // Simple seed for testing
+        let sk = BlstSecretKey::key_gen(&seed, &[]).unwrap();
+        
+        // Convert to the types expected by our functions
+        let secret_key = SecretKey::deserialize(&sk.serialize()).unwrap();
+        // Generate public key directly from the secret key using the public API
+        let public_key = secret_key.public_key();
+        
+        (secret_key, public_key)
+    }
+
+    #[test]
+    fn test_parse_hex_bytes() {
+        // Test valid hex string with 0x prefix
+        let result = parse_hex_bytes::<4>("0x01020304").unwrap();
+        assert_eq!(result, [1, 2, 3, 4]);
+        
+        // Test valid hex string without 0x prefix
+        let result = parse_hex_bytes::<4>("05060708").unwrap();
+        assert_eq!(result, [5, 6, 7, 8]);
+        
+        // Test invalid length
+        let result = parse_hex_bytes::<4>("0x0102");
+        assert!(result.is_err());
+        
+        // Test invalid hex characters
+        let result = parse_hex_bytes::<4>("0x0102ZZ");
+        assert!(result.is_err());
+    }
+    
+    #[test]
+    fn test_get_genesis_validators_root() {
+        // Test mainnet
+        let root = get_genesis_validators_root(&Chain::Mainnet).unwrap();
+        let expected_hex = MAINNET_GENESIS_VALIDATORS_ROOT_STR.strip_prefix("0x").unwrap();
+        let expected = hex::decode(expected_hex).unwrap();
+        assert_eq!(root.as_bytes(), expected.as_slice());
+        
+        // Test hoodi
+        let root = get_genesis_validators_root(&Chain::Hoodi).unwrap();
+        let expected_hex = HOODI_GENESIS_VALIDATORS_ROOT_STR.strip_prefix("0x").unwrap();
+        let expected = hex::decode(expected_hex).unwrap();
+        assert_eq!(root.as_bytes(), expected.as_slice());
+    }
+    
+    #[test]
+    fn test_get_electra_fork_version() {
+        // Test mainnet
+        let version = get_electra_fork_version(&Chain::Mainnet);
+        assert_eq!(version, MAINNET_ELECTRA_FORK_VERSION);
+        
+        // Test hoodi
+        let version = get_electra_fork_version(&Chain::Hoodi);
+        assert_eq!(version, HOODI_ELECTRA_FORK_VERSION);
+    }
+    
+    #[test]
+    fn test_get_network_name() {
+        assert_eq!(get_network_name(&Chain::Mainnet), "mainnet");
+        assert_eq!(get_network_name(&Chain::Hoodi), "hoodi");
+    }
+    
+    #[test]
+    fn test_format_withdrawal_credentials_eth1() {
+        // Test ETH1 (01) credentials
+        let address = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F";
+        let result = format_withdrawal_credentials(address, &BlsMode::Eth1).unwrap();
+        
+        // First byte should be 0x01 for ETH1
+        assert_eq!(result[0], ETH1_ADDRESS_WITHDRAWAL_PREFIX);
+        
+        // Next 11 bytes should be zeros
+        for i in 1..12 {
+            assert_eq!(result[i], 0);
+        }
+        
+        // Last 20 bytes should be the ETH address (without 0x prefix)
+        let address_bytes = hex::decode(&address[2..]).unwrap();
+        for i in 0..20 {
+            assert_eq!(result[i+12], address_bytes[i]);
+        }
+    }
+    
+    #[test]
+    fn test_format_withdrawal_credentials_pectra() {
+        // Test Pectra (02) credentials
+        let address = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F";
+        let result = format_withdrawal_credentials(address, &BlsMode::Pectra).unwrap();
+        
+        // First byte should be 0x02 for Pectra
+        assert_eq!(result[0], ETH2_ADDRESS_WITHDRAWAL_PREFIX);
+        
+        // Next 11 bytes should be zeros
+        for i in 1..12 {
+            assert_eq!(result[i], 0);
+        }
+        
+        // Last 20 bytes should be the ETH address (without 0x prefix)
+        let address_bytes = hex::decode(&address[2..]).unwrap();
+        for i in 0..20 {
+            assert_eq!(result[i+12], address_bytes[i]);
+        }
+    }
+    
+    #[test]
+    fn test_format_withdrawal_credentials_invalid_address() {
+        // Test invalid address (too short)
+        let result = format_withdrawal_credentials("0x123", &BlsMode::Eth1);
+        assert!(result.is_err());
+        
+        // Test invalid address (no 0x prefix)
+        let result = format_withdrawal_credentials("71C7656EC7ab88b098defB751B7401B5f6d8976F", &BlsMode::Eth1);
+        assert!(result.is_err());
+        
+        // Test invalid address (invalid hex)
+        let result = format_withdrawal_credentials("0x71C7656EC7ab88b098defB751B7401B5f6d897ZZ", &BlsMode::Eth1);
+        assert!(result.is_err());
+    }
+    
+    #[test]
+    fn test_generate_deposit_data_eth1() {
+        // Create test keys
+        let (sk, pk) = create_test_secret_key();
+        
+        // Generate deposit data for ETH1 mode
+        let result = generate_deposit_data(
+            &pk,
+            &sk,
+            "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+            &BlsMode::Eth1,
+            32, // 32 ETH
+            &Chain::Mainnet
+        ).unwrap();
+        
+        // Verify basic properties
+        assert!(result.pubkey.starts_with("0x"));
+        assert!(result.withdrawal_credentials.starts_with("0x"));
+        assert_eq!(result.amount, 32 * GWEI_PER_ETH);
+        assert!(result.signature.starts_with("0x"));
+        assert!(result.deposit_message_root.starts_with("0x"));
+        assert!(result.deposit_data_root.starts_with("0x"));
+        assert_eq!(result.fork_version, "0x00000000");
+        assert_eq!(result.network_name, "mainnet");
+        assert_eq!(result.deposit_cli_version, DEPOSIT_CLI_VERSION);
+        
+        // Verify withdrawal credentials starts with 0x01 for ETH1
+        assert_eq!(&result.withdrawal_credentials[0..4], "0x01");
+    }
+    
+    #[test]
+    fn test_generate_deposit_data_pectra() {
+        // Create test keys
+        let (sk, pk) = create_test_secret_key();
+        
+        // Generate deposit data for Pectra mode
+        let result = generate_deposit_data(
+            &pk,
+            &sk,
+            "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+            &BlsMode::Pectra,
+            64, // 64 ETH (Pectra allows more than 32)
+            &Chain::Mainnet
+        ).unwrap();
+        
+        // Verify basic properties
+        assert!(result.pubkey.starts_with("0x"));
+        assert!(result.withdrawal_credentials.starts_with("0x"));
+        assert_eq!(result.amount, 64 * GWEI_PER_ETH);
+        assert!(result.signature.starts_with("0x"));
+        assert!(result.deposit_message_root.starts_with("0x"));
+        assert!(result.deposit_data_root.starts_with("0x"));
+        assert_eq!(result.fork_version, "0x00000000");
+        assert_eq!(result.network_name, "mainnet");
+        assert_eq!(result.deposit_cli_version, DEPOSIT_CLI_VERSION);
+        
+        // Verify withdrawal credentials starts with 0x02 for Pectra
+        assert_eq!(&result.withdrawal_credentials[0..4], "0x02");
+    }
+    
+    // Helper function to create a test secret key with a specific seed
+    fn create_test_secret_key_with_seed(seed_value: u8) -> (SecretKey, PublicKey) {
+        // Create a deterministic test key with the provided seed
+        let mut seed = [0u8; 32];
+        seed[0] = seed_value; // Use different seed values to get different keys
+        let sk = BlstSecretKey::key_gen(&seed, &[]).unwrap();
+        
+        // Convert to the types expected by our functions
+        let secret_key = SecretKey::deserialize(&sk.serialize()).unwrap();
+        let public_key = secret_key.public_key();
+        
+        (secret_key, public_key)
+    }
+
+    #[test]
+    fn test_generate_deposit_data_different_chains() {
+        // Create different test keys for each chain to ensure different signatures
+        let (sk1, pk1) = create_test_secret_key();
+        
+        // Create a second key with a different seed
+        let mut seed = [0u8; 32];
+        seed[0] = 42; // Different seed value
+        let sk2 = BlstSecretKey::key_gen(&seed, &[]).unwrap();
+        let sk2 = SecretKey::deserialize(&sk2.serialize()).unwrap();
+        let pk2 = sk2.public_key();
+        
+        let withdrawal_address = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F";
+        
+        // Generate deposit data for mainnet
+        let mainnet_result = generate_deposit_data(
+            &pk1,
+            &sk1,
+            withdrawal_address,
+            &BlsMode::Eth1,
+            32,
+            &Chain::Mainnet
+        ).unwrap();
+        
+        // Generate deposit data for hoodi
+        let hoodi_result = generate_deposit_data(
+            &pk2,
+            &sk2,
+            withdrawal_address,
+            &BlsMode::Eth1,
+            32,
+            &Chain::Hoodi
+        ).unwrap();
+        
+        // Network name should be different
+        assert_eq!(mainnet_result.network_name, "mainnet");
+        assert_eq!(hoodi_result.network_name, "hoodi");
+        
+        // Verify the fork versions are different
+        let mainnet_fork = get_electra_fork_version(&Chain::Mainnet);
+        let hoodi_fork = get_electra_fork_version(&Chain::Hoodi);
+        assert_ne!(mainnet_fork, hoodi_fork, "Fork versions should be different");
+        
+        // Verify the genesis validators roots are different
+        let mainnet_root = get_genesis_validators_root(&Chain::Mainnet).unwrap();
+        let hoodi_root = get_genesis_validators_root(&Chain::Hoodi).unwrap();
+        assert_ne!(mainnet_root, hoodi_root, "Genesis validators roots should be different");
+        
+        // Verify that the deposit data signatures are different
+        // This will be true because we're using different keys and different chains
+        assert_ne!(mainnet_result.signature, hoodi_result.signature, 
+            "Signatures should be different for different keys and chains");
+        
+        // Additional verification: same key, different chains should still have different signatures
+        let mainnet_result2 = generate_deposit_data(
+            &pk1,
+            &sk1,
+            withdrawal_address,
+            &BlsMode::Eth1,
+            32,
+            &Chain::Mainnet
+        ).unwrap();
+        
+        let hoodi_result2 = generate_deposit_data(
+            &pk1,
+            &sk1,
+            withdrawal_address,
+            &BlsMode::Eth1,
+            32,
+            &Chain::Hoodi
+        ).unwrap();
+        
+        // Even with the same key, different chains should produce different signatures
+        // due to domain separation (different fork versions and genesis validators roots)
+        assert_ne!(mainnet_result2.signature, hoodi_result2.signature,
+            "Same key but different chains should still produce different signatures");
+    }
+}

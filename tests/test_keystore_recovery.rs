@@ -1,7 +1,6 @@
 use assert_cmd::Command;
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
 use serde_json::Value;
 use tempfile::TempDir;
 use regex::Regex;

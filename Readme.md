@@ -23,9 +23,8 @@ A command-line tool for Ethereum validator staking operations with secure key ma
   - Optional structured JSON output including private keys (`--format json`)
   - Parameter validation (password length, ETH amount, address format)
 
-  🛠 In Development:
-- Deposit data generation
-- more testing
+Not Yet Implemented:
+- allow json output to secure file with encryption
 
 ## Installation
 
@@ -87,7 +86,7 @@ This will generate 3 recovered keystore files and the deposit data files in the 
 ⚠️ **Important Notes:**
 1. When generating new mnemonics, they are displayed with an IMPORTANT warning - store this securely!
 2. For recovery, you must use the exact same parameters as original generation.
-3. When using `--format json`, the output includes the mnemonic, keystores, deposit data, and private keys.
+3. When using `--format json`, the output includes the mnemonic, keystores, deposit data, and private keys to stdout.
 4. When using `--format files`, files are written to the output directory and a summary is printed to stdout.
 5. If `--eth-amounts` is not provided for a single validator, a default of 32 ETH will be used.
 6. If `validator_count > 1`, then `--eth-amounts` must be provided with exactly that many values.
@@ -108,6 +107,19 @@ cargo test -- --ignored
 
 # Test specific component
 cargo test test_mnemonic_generation
+```
+
+### Reference Tests
+- included in tests/test_compatibility.rs is a reference test that compares output with the official [ethereum staking deposit cli tool](https://github.com/ethereum/staking-deposit-cli).
+- this tool was used to generate the reference keystores and deposit data files in the test/reference_data directory using the following parameters:
+
+```sh
+--mnemonic="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+--execution_address="0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+--num_validators=3
+--validator_start_index=5
+
+# for the generated keystore a password of "testpassword123" was used
 ```
 
 ## Project Structure

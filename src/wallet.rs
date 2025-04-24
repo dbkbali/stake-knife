@@ -2,7 +2,7 @@
 
 
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use clap::ValueEnum;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -53,19 +53,25 @@ pub struct WalletParams {
     /// Optional BIP-39 mnemonic for key derivation
     pub mnemonic: Option<String>,
     /// Amount of ETH to stake per validator
+    #[allow(dead_code)]
     pub eth_amount: u64,
     /// Staker's withdrawal address
+    #[allow(dead_code)]
     pub withdrawal_address: String,
     /// BLS mode (determines withdrawal credential type)
+    #[allow(dead_code)]
     pub bls_mode: crate::BlsMode, // Use type from main.rs
     /// Password for encrypting the keystore
+    #[allow(dead_code)]
     pub password: Option<String>,
     /// Target network
     #[allow(dead_code)]
     pub chain: Chain,
     /// Output directory for wallet files
+    #[allow(dead_code)]
     pub output_dir: PathBuf,
     /// KDF type for keystore encryption
+    #[allow(dead_code)]
     pub kdf_mode: KdfMode,
     /// Validator index for key derivation path
     pub validator_index: u32,

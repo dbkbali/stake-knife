@@ -1,0 +1,194 @@
+name: Release
+
+# Add permissions needed for releases and version commits
+permissions:
+  contents: write  # Allows creating releases and pushing commits
+  pull-requests: write  # If workflow needs to create PRs
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  version-bump:
+    name: Bump Version
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.current_version.outputs.new_version }}
+      current_version: ${{ steps.current_version.outputs.current_version }}
+      is_merge_from_develop: ${{ steps.check_merge.outputs.is_merge_from_develop }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if merge from develop
+        id: check_merge
+        run: |
+          LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
+          if [[ $LAST_COMMIT_MSG == *"Merge branch 'develop'"* || $LAST_COMMIT_MSG == *"Merge pull request"*.*"from develop"* ]]; then
+            echo "is_merge_from_develop=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_merge_from_develop=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get current version
+        if: steps.check_merge.outputs.is_merge_from_develop == 'true'
+        id: current_version
+        run: |
+          CURRENT_VERSION=$(grep -m1 'version = ' Cargo.toml | cut -d '"' -f2)
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          
+          # Split into components
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          
+          # Increment patch version
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update version in Cargo.toml
+        if: steps.check_merge.outputs.is_merge_from_develop == 'true'
+        run: |
+          sed -i "s/version = \"${{ steps.current_version.outputs.current_version }}\"/version = \"${{ steps.current_version.outputs.new_version }}\"/" Cargo.toml
+          
+          # Configure git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Commit and push the version change
+          git add Cargo.toml
+          git commit -m "Bump version to ${{ steps.current_version.outputs.new_version }} [skip ci]"
+          git push
+
+  build-linux:
+    name: Build Linux x86_64
+    needs: version-bump
+    if: needs.version-bump.outputs.is_merge_from_develop == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: main  # Get the latest code with version bump
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          rustup default stable
+
+      - name: Build Release
+        run: cargo build --release
+
+      - name: Create release artifacts
+        run: |
+          mkdir -p release
+          cp target/release/stake-knife release/stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64
+          cd release
+          tar -czf stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64
+          shasum -a 256 stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz > stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz.sha256
+      
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-artifacts
+          path: release/*
+
+  build-macos:
+    name: Build macOS ARM64 (Apple Silicon)
+    needs: version-bump
+    if: needs.version-bump.outputs.is_merge_from_develop == 'true'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: main  # Get the latest code with version bump
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          rustup default stable
+          rustup target add aarch64-apple-darwin
+
+      - name: Build Release for Apple Silicon
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Create release artifacts
+        run: |
+          mkdir -p release
+          cp target/aarch64-apple-darwin/release/stake-knife release/stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64
+          cd release
+          tar -czf stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64
+          shasum -a 256 stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz > stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz.sha256
+      
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: macos-artifacts
+          path: release/*
+
+  create-release:
+    name: Create GitHub Release
+    needs: [version-bump, build-linux, build-macos]
+    if: needs.version-bump.outputs.is_merge_from_develop == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: linux-artifacts
+          path: release
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: macos-artifacts
+          path: release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.version-bump.outputs.new_version }}
+          name: Release v${{ needs.version-bump.outputs.new_version }}
+          draft: false
+          prerelease: false
+          files: |
+            release/stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz
+            release/stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz.sha256
+            release/stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz
+            release/stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz.sha256
+          body: |
+            # Stake-Knife v${{ needs.version-bump.outputs.new_version }}
+            
+            ## What's Changed
+            
+            * Merged develop branch into main
+            * Automatically bumped version from ${{ needs.version-bump.outputs.current_version }} to ${{ needs.version-bump.outputs.new_version }}
+            
+            ## Installation
+            
+            ### Linux x86_64
+            ```
+            curl -LO [https://github.com/${{](https://github.com/${{) github.repository }}/releases/download/v${{ needs.version-bump.outputs.new_version }}/stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz
+            tar -xzf stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz
+            chmod +x stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64
+            ./stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64 --help
+            ```
+            
+            ### macOS ARM64 (Apple Silicon)
+            ```
+            curl -LO [https://github.com/${{](https://github.com/${{) github.repository }}/releases/download/v${{ needs.version-bump.outputs.new_version }}/stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz
+            tar -xzf stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz
+            chmod +x stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64
+            ./stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64 --help
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

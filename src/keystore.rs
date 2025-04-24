@@ -2,12 +2,10 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use blst::min_pk::SecretKey;
-// Removed unused sha2::Sha256 import (it's used inline later)
 use aes::Aes128;
 use aes::cipher::{KeyIvInit, StreamCipher};
 use ctr::Ctr128BE;
 use std::collections::HashMap;
-use rand::rngs::OsRng;
 use rand::RngCore;
 use std::path::Path;
 use scrypt::{scrypt, Params as ScryptParams};
@@ -22,9 +20,6 @@ const SCRYPT_DKLEN: usize = 32;
 /// EIP-2335 keystore version
 const VERSION: u32 = 4;
 
-/// Keystore crypto functions
-const CIPHER: &str = "aes-128-ctr";
-
 /// KDF options
 #[derive(Debug, Clone, Copy)]
 pub enum KdfType {
@@ -33,7 +28,6 @@ pub enum KdfType {
 }
 
 impl KdfType {
-
 
     fn derive_key(&self, password: &[u8], salt: &[u8], output: &mut [u8]) -> Result<()> {
         match self {
@@ -157,17 +151,21 @@ pub fn generate_keystore(secret_key: &SecretKey, password: &str, path: &str, kdf
     // Generate random salt and IV
     let mut salt = [0u8; 32];
     let mut iv = [0u8; 16];
-    OsRng.fill_bytes(&mut salt);
-    OsRng.fill_bytes(&mut iv);
+    let mut rng = rand::rng();
+    rng.fill_bytes(&mut salt);
+    rng.fill_bytes(&mut iv);
 
     // Derive encryption key
     let mut encryption_key = [0u8; SCRYPT_DKLEN];
     kdf_type.derive_key(password.as_bytes(), &salt, &mut encryption_key)?;
 
     // Encrypt secret key
+    // Use the crypto-common's GenericArray instead of the direct generic_array crate
+    use aes::cipher::generic_array::GenericArray;
+    
     let mut cipher = Ctr128BE::<Aes128>::new(
-        generic_array::GenericArray::from_slice(&encryption_key[..16]),
-        generic_array::GenericArray::from_slice(&iv),
+        &GenericArray::clone_from_slice(&encryption_key[..16]),
+        &GenericArray::clone_from_slice(&iv),
     );
     let mut encrypted_key = secret_key.serialize();
     cipher.apply_keystream(&mut encrypted_key);
@@ -236,24 +234,70 @@ pub fn generate_keystore(secret_key: &SecretKey, password: &str, path: &str, kdf
 pub fn write_keystore(keystore: &Keystore, output_dir: &Path) -> Result<()> {
     // Create output directory if it doesn't exist
     std::fs::create_dir_all(output_dir)?;
-
-    // Generate keystore filename: UTC--<ISO8601>-<UUID>
-    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S%.3fZ");
+    
+    // Format filename according to EIP-2335 spec
+    // Format: UTC--<ISO 8601 timestamp>--<UUID>
+    let now = chrono::Utc::now();
+    let timestamp = now.format("%Y-%m-%dT%H-%M-%S%.3fZ");
     let filename = format!("UTC--{}--{}", timestamp, keystore.uuid);
-    let path = output_dir.join(filename);
-
-    // Write keystore JSON
-    let json = serde_json::to_string_pretty(keystore)?;
-    std::fs::write(path, json)?;
-
+    let output_path = output_dir.join(filename);
+    
+    // Write keystore to file
+    let keystore_json = serde_json::to_string_pretty(keystore)?;
+    std::fs::write(output_path, keystore_json)?;
+    
     Ok(())
+}
+
+/// Decrypt a keystore with a password
+/// Returns the secret key if the password is correct, or an error if the password is incorrect
+#[allow(dead_code)]
+pub fn decrypt_keystore(keystore: &Keystore, password: &str) -> Result<SecretKey> {
+    use anyhow::anyhow;
+    use sha2::{Sha256, Digest};
+    
+    // Derive encryption key
+    let mut encryption_key = [0u8; SCRYPT_DKLEN];
+    
+    // Get salt and derive key based on KDF type
+    let (kdf_type, salt) = match &keystore.crypto.kdf {
+        KdfData::Scrypt { params, .. } => (KdfType::Scrypt, hex::decode(&params.salt)?),
+        KdfData::Pbkdf2 { params, .. } => (KdfType::Pbkdf2, hex::decode(&params.salt)?),
+    };
+    kdf_type.derive_key(password.as_bytes(), &salt, &mut encryption_key)?;
+    
+    // Verify checksum
+    let mut hasher = Sha256::new();
+    hasher.update(&encryption_key[16..]);
+    let encrypted_key = hex::decode(&keystore.crypto.cipher.message)?;
+    hasher.update(&encrypted_key);
+    let checksum = hasher.finalize();
+    
+    // Compare checksums to verify password
+    if hex::encode(checksum) != keystore.crypto.checksum.message {
+        return Err(anyhow!("Invalid password: checksum verification failed"));
+    }
+    
+    // Decrypt secret key
+    let iv = hex::decode(&keystore.crypto.cipher.params.iv)?;
+    let mut cipher = Ctr128BE::<Aes128>::new(
+        cipher::generic_array::GenericArray::from_slice(&encryption_key[..16]),
+        cipher::generic_array::GenericArray::from_slice(&iv)
+    );
+    let mut decrypted_key = encrypted_key.clone();
+    cipher.apply_keystream(&mut decrypted_key);
+    
+    // Create and return the secret key
+    let secret_key = SecretKey::from_bytes(&decrypted_key)
+        .map_err(|e| anyhow!("Failed to create secret key: {:?}", e))?;
+    
+    Ok(secret_key)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
-    use rand::rngs::OsRng;
     use rand::RngCore;
     use blst::min_pk::SecretKey;
 
@@ -340,8 +384,7 @@ mod tests {
 
             // Generate a keystore with the same parameters
             let mut ikm = [0u8; 32];
-            let mut rng = OsRng;
-            rng.fill_bytes(&mut ikm);
+            rand::rng().fill_bytes(&mut ikm);
             let secret_key = SecretKey::key_gen(&ikm, &[]).unwrap();
             let password = "testpassword";
             let path = test_keystore.path.clone();
@@ -433,8 +476,8 @@ mod tests {
             // Decrypt secret key
             let iv = hex::decode(&test_keystore.crypto.cipher.params.iv)?;
             let mut cipher = Ctr128BE::<Aes128>::new(
-                generic_array::GenericArray::from_slice(&encryption_key[..16]),
-                generic_array::GenericArray::from_slice(&iv),
+                cipher::generic_array::GenericArray::from_slice(&encryption_key[..16]),
+                cipher::generic_array::GenericArray::from_slice(&iv)
             );
             let mut decrypted_key = encrypted_key.clone();
             cipher.apply_keystream(&mut decrypted_key);
@@ -452,6 +495,35 @@ mod tests {
                 "Public key mismatch for test vector"
             );
         }
+        Ok(())
+    }
+    
+    #[test]
+    fn test_password_verification() -> Result<()> {
+        // Create a test key
+        let secret_key = create_test_key();
+        let correct_password = "correct-password-123";
+        let wrong_password = "wrong-password-456";
+        let path = "m/12381/3600/0/0/0";
+        
+        // Generate a keystore with the correct password
+        let keystore = generate_keystore(&secret_key, correct_password, path, KdfType::Scrypt)?;
+        
+        // Verify we can decrypt with the correct password
+        let decrypted_key = decrypt_keystore(&keystore, correct_password)?;
+        assert_eq!(
+            hex::encode(decrypted_key.serialize()),
+            hex::encode(secret_key.serialize()),
+            "Decrypted key should match original key"
+        );
+        
+        // Verify decryption fails with the wrong password
+        let result = decrypt_keystore(&keystore, wrong_password);
+        assert!(result.is_err(), "Decryption should fail with wrong password");
+        let error_message = format!("{}", result.unwrap_err());
+        assert!(error_message.contains("Invalid password"), 
+                "Error message should indicate invalid password, got: {}", error_message);
+        
         Ok(())
     }
 }

@@ -2,6 +2,8 @@ use anyhow::{anyhow, Context, Result};
 use ethereum_hashing::hash as eth_hash;
 use serde::Serialize;
 use smallvec::SmallVec;
+// Import the Encode trait directly from ethereum_ssz version 0.7.1
+use ethereum_ssz::Encode;
 use tree_hash::TreeHash;
 use types::{
     DepositData, DepositMessage, ForkVersion, Hash256, PublicKey, PublicKeyBytes, SecretKey,
@@ -9,7 +11,7 @@ use types::{
 };
 use crate::BlsMode;
 use crate::wallet::Chain;
-use ssz::Encode as _;
+// We already have the TreeHash trait imported directly
 
 // --- Constants ---
 const DEPOSIT_CLI_VERSION: &str = "2.8.0";
@@ -22,12 +24,10 @@ const DOMAIN_DEPOSIT: u32 = 3;
 
 // Network specific constants
 // Electra Fork Versions
+#[allow(dead_code)]
 const MAINNET_ELECTRA_FORK_VERSION: [u8; 4] = [0x00, 0x00, 0x00, 0x00]; // Mainnet fork version
+#[allow(dead_code)]
 const HOODI_ELECTRA_FORK_VERSION: [u8; 4] = [0x10, 0x00, 0x09, 0x10]; // Hoodi fork version
-
-// Genesis Validators Roots (Hex strings)
-const MAINNET_GENESIS_VALIDATORS_ROOT_STR: &str = "0x4b363db94e286120d76eb905340fdd4e54bfe9f06bf33ff6cf5ad27f511bfe95";
-const HOODI_GENESIS_VALIDATORS_ROOT_STR: &str = "0x212f13fc4df078b6cb7db228f1c8307566dcecf900867401a92023d7ba99cb5f";
 
 // --- Helper Functions ---
 
@@ -48,12 +48,10 @@ fn parse_hex_bytes<const N: usize>(hex_str: &str) -> Result<[u8; N]> {
     Ok(bytes)
 }
 
-fn get_genesis_validators_root(chain: &Chain) -> Result<Hash256> {
-     let hex_str = match chain {
-        Chain::Mainnet => MAINNET_GENESIS_VALIDATORS_ROOT_STR,
-        Chain::Hoodi => HOODI_GENESIS_VALIDATORS_ROOT_STR,
-    };
-    Ok(Hash256::from_slice(&parse_hex_bytes::<32>(hex_str)?))
+fn get_genesis_validators_root(_chain: &Chain) -> Result<Hash256> {
+    // Always use a zero hash for the genesis validators root when generating deposit data
+    // This matches the official implementation which uses EMPTY_ROOT
+    Ok(Hash256::from_slice(&[0u8; 32]))
 }
 
 
@@ -122,19 +120,67 @@ pub struct DepositDataFile {
 
 /// Computes the domain for signing based on domain type, fork version, and genesis validators root
 fn compute_domain(domain_type: u32, fork_version: ForkVersion, genesis_validators_root: Hash256) -> [u8; 32] {
-    // According to ETH2 specs, domain = domain_type + fork_version + hash(genesis_validators_root)[0:28]
+    // According to ETH2 specs and the official implementation:
+    // 1. Create a ForkData structure with currentVersion and genesisValidatorsRoot
+    // 2. Compute the hash tree root of this structure
+    // 3. Set the domain type in the first 4 bytes of the domain
+    // 4. Set the first 28 bytes of the fork data root starting at offset 4
+    
+    // First, compute the fork data root
+    // ForkData = { currentVersion: ForkVersion, genesisValidatorsRoot: Hash256 }
+    struct ForkData {
+        current_version: ForkVersion,
+        genesis_validators_root: Hash256,
+    }
+    
+    impl TreeHash for ForkData {
+        fn tree_hash_type() -> tree_hash::TreeHashType {
+            tree_hash::TreeHashType::Container
+        }
+        
+        fn tree_hash_packed_encoding(&self) -> SmallVec<[u8; 32]> {
+            unreachable!("Containers are not packed")
+        }
+        
+        fn tree_hash_packing_factor() -> usize {
+            unreachable!("Containers are not packed")
+        }
+        
+        fn tree_hash_root(&self) -> tree_hash::Hash256 {
+            // Create a buffer to hold the concatenated values
+            let mut buffer = [0u8; 64];
+            
+            // Copy the current_version into the first 4 bytes
+            buffer[0..4].copy_from_slice(&self.current_version);
+            
+            // Copy the genesis_validators_root into the next 32 bytes
+            buffer[4..36].copy_from_slice(self.genesis_validators_root.as_ref());
+            
+            // Hash the concatenated buffer
+            let hash_bytes = eth_hash(&buffer);
+            
+            // Convert to the expected Hash256 type
+            tree_hash::Hash256::from_slice(&hash_bytes)
+        }
+    }
+    
+    // Create the ForkData and compute its hash tree root
+    let fork_data = ForkData {
+        current_version: fork_version,
+        genesis_validators_root,
+    };
+    
+    let fork_data_root = fork_data.tree_hash_root();
+    
+    // Create the domain
     let mut domain = [0u8; 32];
     
-    // First 4 bytes: domain type as little-endian bytes
+    // Set the domain type in the first 4 bytes
     domain[0..4].copy_from_slice(&domain_type.to_le_bytes());
     
-    // Next 4 bytes: fork version
-    domain[4..8].copy_from_slice(&fork_version);
-    
-    // Last 24 bytes: first 24 bytes of hash(genesis_validators_root)
-    // In ETH2 specs, we'd use the first 28 bytes of hash(genesis_validators_root)
-    // But since genesis_validators_root is already a hash, we can use its first 24 bytes directly
-    domain[8..32].copy_from_slice(&genesis_validators_root.as_bytes()[0..24]);
+    // Set the first 28 bytes of the fork data root starting at offset 4
+    let fork_data_root_bytes: &[u8] = fork_data_root.as_ref();
+    domain[4..32].copy_from_slice(&fork_data_root_bytes[0..28]);
     
     domain
 }
@@ -150,7 +196,8 @@ fn compute_signing_root(message_root: Hash256, domain: [u8; 32]) -> Hash256 {
         domain: [u8; 32],
     }
     
-    impl TreeHash for SigningData {
+    // Implement TreeHash for SigningData
+impl TreeHash for SigningData {
         fn tree_hash_type() -> tree_hash::TreeHashType {
             tree_hash::TreeHashType::Container
         }
@@ -163,19 +210,26 @@ fn compute_signing_root(message_root: Hash256, domain: [u8; 32]) -> Hash256 {
             unreachable!("Containers are not packed")
         }
         
-        fn tree_hash_root(&self) -> Hash256 {
-            // Manually compute the hash of the two fields
-            // For a container with two fields, we need to compute the root as:
-            // hash(hash(field1) + hash(field2))
-            let object_root_hash = self.object_root;
-            let domain_hash = Hash256::from_slice(&eth_hash(&self.domain));
+        fn tree_hash_root(&self) -> tree_hash::Hash256 {
+            // The official implementation computes the signing root as follows:
+            // 1. The object_root is already a hash, so we use it directly
+            // 2. The domain needs to be converted to a Hash256
+            // 3. We concatenate the two 32-byte values and hash the result
             
-            // Combine the two hashes
-            let mut combined = Vec::with_capacity(64);
-            combined.extend_from_slice(object_root_hash.as_bytes());
-            combined.extend_from_slice(domain_hash.as_bytes());
+            // Create a buffer to hold the concatenated values
+            let mut buffer = [0u8; 64];
             
-            Hash256::from_slice(&eth_hash(&combined))
+            // Copy the object_root into the first 32 bytes
+            buffer[0..32].copy_from_slice(self.object_root.as_ref());
+            
+            // Copy the domain into the next 32 bytes
+            buffer[32..64].copy_from_slice(&self.domain);
+            
+            // Hash the concatenated buffer
+            let hash_bytes = eth_hash(&buffer);
+            
+            // Convert to the expected Hash256 type
+            tree_hash::Hash256::from_slice(&hash_bytes)
         }
     }
     
@@ -185,7 +239,9 @@ fn compute_signing_root(message_root: Hash256, domain: [u8; 32]) -> Hash256 {
         domain,
     };
     
-    signing_data.tree_hash_root()
+    // Convert the tree_hash_root result to the expected Hash256 type
+    let hash = signing_data.tree_hash_root();
+    Hash256::from_slice(hash.as_ref())
 }
 
 /// Generates deposit data for a single validator.
@@ -215,7 +271,7 @@ pub fn generate_deposit_data(
     };
 
     // 3. Calculate Signing Domain & Root according to ETH2 specs
-    let message_root = message.tree_hash_root();
+    let message_root = tree_hash::TreeHash::tree_hash_root(&message);
     let domain = compute_domain(DOMAIN_DEPOSIT, fork_version, genesis_validators_root);
     let signing_root = compute_signing_root(message_root, domain);
 
@@ -223,7 +279,7 @@ pub fn generate_deposit_data(
     let signature = validator_sk.sign(signing_root);
 
     // 5. Calculate Deposit Message Root (SSZ hash tree root of DepositMessage)
-    let deposit_message_root = message.tree_hash_root();
+    let deposit_message_root = tree_hash::TreeHash::tree_hash_root(&message);
 
     // 6. Construct DepositData (Lighthouse type)
     let deposit_data = DepositData {
@@ -234,18 +290,18 @@ pub fn generate_deposit_data(
     };
 
     // 7. Calculate Deposit Data Root (SSZ hash tree root of DepositData)
-    let deposit_data_root = deposit_data.tree_hash_root();
+    let deposit_data_root = tree_hash::TreeHash::tree_hash_root(&deposit_data);
 
 
     // 8. Construct the final serializable struct
     let deposit_data_file = DepositDataFile {
-        pubkey: format!("0x{}", hex::encode(deposit_data.pubkey.as_ssz_bytes())), // Use as_ssz_bytes
-        withdrawal_credentials: format!("0x{}", hex::encode(deposit_data.withdrawal_credentials.as_bytes())), // This is FixedVector<u8, 32>, as_bytes() is likely correct
+        pubkey: hex::encode(deposit_data.pubkey.as_ssz_bytes()),
+        withdrawal_credentials: hex::encode(deposit_data.withdrawal_credentials.to_vec()),
         amount: deposit_data.amount, // Already in Gwei
-        signature: format!("0x{}", hex::encode(deposit_data.signature.as_ssz_bytes())), // Use as_ssz_bytes
-        deposit_message_root: format!("0x{}", hex::encode(deposit_message_root.as_bytes())), // Root is Hash256, as_bytes() is correct
-        deposit_data_root: format!("0x{}", hex::encode(deposit_data_root.as_bytes())), // Root is Hash256, as_bytes() is correct
-        fork_version: format!("0x{}", hex::encode(fork_version)),
+        signature: hex::encode(deposit_data.signature.as_ssz_bytes()),
+        deposit_message_root: hex::encode(deposit_message_root.to_vec()),
+        deposit_data_root: hex::encode(deposit_data_root.to_vec()),
+        fork_version: hex::encode(fork_version),
         network_name,
         deposit_cli_version: DEPOSIT_CLI_VERSION.to_string(),
     };
@@ -261,7 +317,7 @@ mod tests {
     use super::*;
     use crate::BlsMode;
     use crate::wallet::Chain;
-    use blst::min_pk::{SecretKey as BlstSecretKey, PublicKey as BlstPublicKey};
+    use blst::min_pk::SecretKey as BlstSecretKey;
     use hex;
 
     // Helper function to create a test secret key
@@ -299,17 +355,17 @@ mod tests {
     
     #[test]
     fn test_get_genesis_validators_root() {
-        // Test mainnet
-        let root = get_genesis_validators_root(&Chain::Mainnet).unwrap();
-        let expected_hex = MAINNET_GENESIS_VALIDATORS_ROOT_STR.strip_prefix("0x").unwrap();
-        let expected = hex::decode(expected_hex).unwrap();
-        assert_eq!(root.as_bytes(), expected.as_slice());
+        // Test that both chains return a zero hash
+        let mainnet_root = get_genesis_validators_root(&Chain::Mainnet).unwrap();
+        let hoodi_root = get_genesis_validators_root(&Chain::Hoodi).unwrap();
         
-        // Test hoodi
-        let root = get_genesis_validators_root(&Chain::Hoodi).unwrap();
-        let expected_hex = HOODI_GENESIS_VALIDATORS_ROOT_STR.strip_prefix("0x").unwrap();
-        let expected = hex::decode(expected_hex).unwrap();
-        assert_eq!(root.as_bytes(), expected.as_slice());
+        // Both should be zero hashes
+        let zero_hash = [0u8; 32];
+        assert_eq!(mainnet_root.to_vec(), zero_hash);
+        assert_eq!(hoodi_root.to_vec(), zero_hash);
+        
+        // Both chains should return the same value
+        assert_eq!(mainnet_root, hoodi_root);
     }
     
     #[test]
@@ -402,18 +458,18 @@ mod tests {
         ).unwrap();
         
         // Verify basic properties
-        assert!(result.pubkey.starts_with("0x"));
-        assert!(result.withdrawal_credentials.starts_with("0x"));
+        assert!(!result.pubkey.is_empty());
+        assert!(!result.withdrawal_credentials.is_empty());
         assert_eq!(result.amount, 32 * GWEI_PER_ETH);
-        assert!(result.signature.starts_with("0x"));
-        assert!(result.deposit_message_root.starts_with("0x"));
-        assert!(result.deposit_data_root.starts_with("0x"));
-        assert_eq!(result.fork_version, "0x00000000");
+        assert!(!result.signature.is_empty());
+        assert!(!result.deposit_message_root.is_empty());
+        assert!(!result.deposit_data_root.is_empty());
+        assert_eq!(result.fork_version, "00000000");
         assert_eq!(result.network_name, "mainnet");
         assert_eq!(result.deposit_cli_version, DEPOSIT_CLI_VERSION);
         
-        // Verify withdrawal credentials starts with 0x01 for ETH1
-        assert_eq!(&result.withdrawal_credentials[0..4], "0x01");
+        // Verify withdrawal credentials starts with 01 for ETH1
+        assert_eq!(&result.withdrawal_credentials[0..2], "01");
     }
     
     #[test]
@@ -432,21 +488,22 @@ mod tests {
         ).unwrap();
         
         // Verify basic properties
-        assert!(result.pubkey.starts_with("0x"));
-        assert!(result.withdrawal_credentials.starts_with("0x"));
+        assert!(!result.pubkey.is_empty());
+        assert!(!result.withdrawal_credentials.is_empty());
         assert_eq!(result.amount, 64 * GWEI_PER_ETH);
-        assert!(result.signature.starts_with("0x"));
-        assert!(result.deposit_message_root.starts_with("0x"));
-        assert!(result.deposit_data_root.starts_with("0x"));
-        assert_eq!(result.fork_version, "0x00000000");
+        assert!(!result.signature.is_empty());
+        assert!(!result.deposit_message_root.is_empty());
+        assert!(!result.deposit_data_root.is_empty());
+        assert_eq!(result.fork_version, "00000000");
         assert_eq!(result.network_name, "mainnet");
         assert_eq!(result.deposit_cli_version, DEPOSIT_CLI_VERSION);
         
-        // Verify withdrawal credentials starts with 0x02 for Pectra
-        assert_eq!(&result.withdrawal_credentials[0..4], "0x02");
+        // Verify withdrawal credentials starts with 02 for Pectra
+        assert_eq!(&result.withdrawal_credentials[0..2], "02");
     }
     
     // Helper function to create a test secret key with a specific seed
+    #[allow(dead_code)]
     fn create_test_secret_key_with_seed(seed_value: u8) -> (SecretKey, PublicKey) {
         // Create a deterministic test key with the provided seed
         let mut seed = [0u8; 32];
@@ -503,10 +560,11 @@ mod tests {
         let hoodi_fork = get_electra_fork_version(&Chain::Hoodi);
         assert_ne!(mainnet_fork, hoodi_fork, "Fork versions should be different");
         
-        // Verify the genesis validators roots are different
+        // Verify the genesis validators roots are now the same (zero hash) for both chains
+        // This matches the official implementation
         let mainnet_root = get_genesis_validators_root(&Chain::Mainnet).unwrap();
         let hoodi_root = get_genesis_validators_root(&Chain::Hoodi).unwrap();
-        assert_ne!(mainnet_root, hoodi_root, "Genesis validators roots should be different");
+        assert_eq!(mainnet_root, hoodi_root, "Genesis validators roots should both be zero hash");
         
         // Verify that the deposit data signatures are different
         // This will be true because we're using different keys and different chains

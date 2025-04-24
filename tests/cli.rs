@@ -1,6 +1,5 @@
 use anyhow::Result;
 use assert_cmd::Command;
-use predicates::prelude::*; // Used for checking output
 use serde_json::Value; // Used for parsing JSON output
 
 const TEST_WITHDRAWAL_ADDR: &str = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F";
@@ -724,13 +723,12 @@ fn test_wallet_generate_multiple_validators_bls_mode_01() -> Result<()> {
     assert_eq!(json_output["parameters"]["kdf"], "Scrypt"); 
 
     // Test again, but provide the mnemonic
-    let test_mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
     let mut cmd = Command::cargo_bin("stake-knife")?;
     let output = cmd
         .arg("wallet")
         .arg("generate")
         .arg("--mnemonic")
-        .arg(test_mnemonic) // Provide mnemonic
+        .arg(TEST_MNEMONIC) // Provide mnemonic
         .arg("--eth-amounts")
         .arg("32")
         .arg("--withdrawal-address")
@@ -749,7 +747,7 @@ fn test_wallet_generate_multiple_validators_bls_mode_01() -> Result<()> {
 
     // Verify mnemonic is present, but warning is not
     assert!(json_output["parameters"]["mnemonic"].is_string());
-    assert_eq!(json_output["parameters"]["mnemonic"], test_mnemonic);
+    assert_eq!(json_output["parameters"]["mnemonic"], TEST_MNEMONIC);
     assert!(json_output["keystores"].is_array());
     assert_eq!(json_output["keystores"].as_array().unwrap().len(), 1);
     assert!(json_output["parameters"].is_object());

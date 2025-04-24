@@ -17,8 +17,7 @@ pub enum OutputFormat {
     Json,
 }
 
-use serde::{Serialize, Deserialize};
-use serde::ser::Serializer;
+use serde::Serialize;
 
 #[derive(Debug, Clone, ValueEnum, PartialEq)]
 pub enum BlsMode {
@@ -367,6 +366,7 @@ fn main() -> Result<()> {
                             }
                         },
                         OutputMode::Json => {
+                            let message = "please ensure the mnemonic and private keys are stored securely";
                             let output = json!({
                                 "keystores": keystore_objects,
                                 "deposit_data": all_deposit_data,
@@ -382,13 +382,12 @@ fn main() -> Result<()> {
                                     "chain": chain,
                                     "kdf": kdf
                                 },
-                                "message": null
+                                "message": message
                             });
                             println!("{}", serde_json::to_string_pretty(&output)?);
                         }
                     }
                     
-                    // Return early since we've handled this case
                     return Ok(());
                 }
                 
@@ -439,9 +438,7 @@ fn main() -> Result<()> {
                     let keys = params.generate_keys()?;
 
                     // Always generate keystores in memory
-                    let keystore_path = format!("keystore-m_12381_3600_{}_0_0.json", idx);
-                    // let keystore_file_path: PathBuf = output_dir.join(&keystore_path);
-                    
+                    let keystore_path = format!("keystore-m_12381_3600_{}_0_0.json", idx);                    
                     // Create the correct HD path according to EIP-2334
                     // m / purpose / coin_type / account_index / withdrawal_key_index / validator_index
                     let hd_path = format!("m/12381/3600/{}/0/0", idx);

@@ -3,12 +3,9 @@ use assert_cmd::Command;
 use tempfile::TempDir;
 use serde_json::Value;
 use std::fs;
-use regex::Regex;
 
 // Valid 24-word test mnemonic
 const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
-
-const SMITH_MNEMONIC: &str = "ribbon place hobby useless drink exhaust dolphin giraffe orchard talk census connect labor fade wage hole cigar lobster mechanic dolphin spice cactus cup nuclear";
 
 #[test]
 fn test_consistent_key_derivation() -> Result<()> {
@@ -121,7 +118,7 @@ fn test_different_indices_different_keys() -> Result<()> {
     assert!(output.status.success(), "Command failed: {}", String::from_utf8_lossy(&output.stderr));
     
     // Get the keystore files
-    let mut keystore_files = fs::read_dir(output_path)?
+    let keystore_files = fs::read_dir(output_path)?
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
             let path = entry.path();

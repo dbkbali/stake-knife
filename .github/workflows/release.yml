@@ -177,7 +177,7 @@ jobs:
             
             ### Linux x86_64
             ```
-            curl -LO [https://github.com/${{](https://github.com/${{) github.repository }}/releases/download/v${{ needs.version-bump.outputs.new_version }}/stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz
+            curl -LO https://github.com/${{ github.repository }}/releases/download/v${{ needs.version-bump.outputs.new_version }}/stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz
             tar -xzf stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz
             chmod +x stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64
             ./stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64 --help
@@ -185,7 +185,7 @@ jobs:
             
             ### macOS ARM64 (Apple Silicon)
             ```
-            curl -LO [https://github.com/${{](https://github.com/${{) github.repository }}/releases/download/v${{ needs.version-bump.outputs.new_version }}/stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz
+            curl -LO https://github.com/${{ github.repository }}/releases/download/v${{ needs.version-bump.outputs.new_version }}/stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz
             tar -xzf stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz
             chmod +x stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64
             ./stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64 --help

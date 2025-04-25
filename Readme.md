@@ -1,7 +1,8 @@
 # Stake Knife - Ethereum Staking CLI Tool - For Pectra Validators
 
 [![CI Status](https://github.com/dbkbali/stake-knife/actions/workflows/ci.yml/badge.svg)](https://github.com/dbkbali/stake-knife/actions/workflows/ci.yml)
-[![Latest Release](https://img.shields.io/github/v/release/dbkbali/stake-knife)](https://github.com/dbkbali/stake-knife/releases)
+[![Release Workflow](https://github.com/dbkbali/stake-knife/actions/workflows/release.yml/badge.svg)](https://github.com/dbkbali/stake-knife/actions/workflows/release.yml)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue)](https://github.com/dbkbali/stake-knife/blob/main/Cargo.toml)
 
 A command-line tool for Ethereum validator staking operations with secure key management that generates keystores and deposit.json files for validator provisioning. Stake Knife is specifically designed for post-Pectra validators (32-2048 ETH) with 0x02 execution withdrawal credentials.
 

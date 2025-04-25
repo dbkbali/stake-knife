@@ -34,7 +34,7 @@ jobs:
       is_merge_from_develop: ${{ steps.check_merge.outputs.is_merge_from_develop }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -100,7 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: main  # Get the latest code with version bump
 
@@ -122,7 +122,7 @@ jobs:
           shasum -a 256 stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz > stake-knife-${{ needs.version-bump.outputs.new_version }}-linux-x86_64.tar.gz.sha256
       
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: linux-artifacts
           path: release/*
@@ -133,7 +133,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: main  # Get the latest code with version bump
 
@@ -156,7 +156,7 @@ jobs:
           shasum -a 256 stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz > stake-knife-${{ needs.version-bump.outputs.new_version }}-macos-arm64.tar.gz.sha256
       
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: macos-artifacts
           path: release/*
@@ -167,19 +167,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Linux artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: linux-artifacts
           path: release
 
       - name: Download macOS artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: macos-artifacts
           path: release
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version-bump.outputs.new_version }}
           name: Release v${{ needs.version-bump.outputs.new_version }}

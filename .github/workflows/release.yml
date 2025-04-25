@@ -6,9 +6,23 @@ permissions:
   pull-requests: write  # If workflow needs to create PRs
 
 on:
+  # Trigger on push to main
   push:
     branches:
       - main
+  
+  # Allow manual triggering from GitHub UI
+  workflow_dispatch:
+    inputs:
+      version_increment:
+        description: 'Version increment type'
+        required: true
+        default: 'patch'
+        type: 'choice'
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   version-bump:
@@ -43,10 +57,29 @@ jobs:
           MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
           PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
           
-          # Increment patch version
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          # Determine version increment type
+          INCREMENT_TYPE="patch"  # Default for push to main
+          
+          # If workflow was manually triggered, use the specified increment type
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            INCREMENT_TYPE="${{ github.event.inputs.version_increment }}"
+          fi
+          
+          # Increment version based on type
+          if [[ "$INCREMENT_TYPE" == "major" ]]; then
+            NEW_MAJOR=$((MAJOR + 1))
+            NEW_VERSION="$NEW_MAJOR.0.0"
+          elif [[ "$INCREMENT_TYPE" == "minor" ]]; then
+            NEW_MINOR=$((MINOR + 1))
+            NEW_VERSION="$MAJOR.$NEW_MINOR.0"
+          else
+            # Default to patch
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          fi
+          
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Incrementing version from $CURRENT_VERSION to $NEW_VERSION ($INCREMENT_TYPE)"
 
       - name: Update version in Cargo.toml
         run: |
@@ -162,8 +195,8 @@ jobs:
             
             ## What's Changed
             
-            * Merged develop branch into main
             * Automatically bumped version from ${{ needs.version-bump.outputs.current_version }} to ${{ needs.version-bump.outputs.new_version }}
+            * See commit history for detailed changes
             
             ## Installation
             

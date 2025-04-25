@@ -25,18 +25,14 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check if merge from develop
+      - name: Set release flag
         id: check_merge
         run: |
-          LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
-          if [[ $LAST_COMMIT_MSG == *"Merge branch 'develop'"* || $LAST_COMMIT_MSG == *"Merge pull request"*.*"from develop"* ]]; then
-            echo "is_merge_from_develop=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_merge_from_develop=false" >> $GITHUB_OUTPUT
-          fi
+          # Always set to true for any push to main
+          echo "is_merge_from_develop=true" >> $GITHUB_OUTPUT
+          echo "Running release for push to main branch"
 
       - name: Get current version
-        if: steps.check_merge.outputs.is_merge_from_develop == 'true'
         id: current_version
         run: |
           CURRENT_VERSION=$(grep -m1 'version = ' Cargo.toml | cut -d '"' -f2)
@@ -53,7 +49,6 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Update version in Cargo.toml
-        if: steps.check_merge.outputs.is_merge_from_develop == 'true'
         run: |
           sed -i "s/version = \"${{ steps.current_version.outputs.current_version }}\"/version = \"${{ steps.current_version.outputs.new_version }}\"/" Cargo.toml
           
@@ -69,7 +64,6 @@ jobs:
   build-linux:
     name: Build Linux x86_64
     needs: version-bump
-    if: needs.version-bump.outputs.is_merge_from_develop == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -103,7 +97,6 @@ jobs:
   build-macos:
     name: Build macOS ARM64 (Apple Silicon)
     needs: version-bump
-    if: needs.version-bump.outputs.is_merge_from_develop == 'true'
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -138,7 +131,6 @@ jobs:
   create-release:
     name: Create GitHub Release
     needs: [version-bump, build-linux, build-macos]
-    if: needs.version-bump.outputs.is_merge_from_develop == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download Linux artifacts

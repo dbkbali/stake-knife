@@ -97,6 +97,21 @@ stake-knife wallet generate \
   --eth-amounts 32,32,32 \
   --validator-count 3 \
   --bls-mode 01  # Pre-Pectra mode (BLS withdrawal credentials)
+
+# Generate JSON output to stdout (includes private keys and mnemonic)
+stake-knife wallet generate \
+  --withdrawal-address 0x71C7656EC7ab88b098defB751B7401B5f6d8976F \
+  --password yourpassword \
+  --eth-amounts 32 \
+  --format json
+
+# Generate JSON output to a secure file (0600 permissions)
+stake-knife wallet generate \
+  --withdrawal-address 0x71C7656EC7ab88b098defB751B7401B5f6d8976F \
+  --password yourpassword \
+  --eth-amounts 32 \
+  --format json \
+  --json-output-file /secure/path/validator-keys.json
 ```
 
 For more examples, see [Wallet Generation Examples](./examples.md)
@@ -134,19 +149,21 @@ This will regenerate your keystore files and the deposit data files in the speci
 | `--bls-mode` | Credential type (`01` or `02`) | No (defaults to `02`/Pectra) | `01` (Eth1) or `02` (Pectra) |
 | `--format` | Output format (`files` or `json`) | No (defaults to `files`) | `files` or `json` |
 | `--output-dir` | Output directory (for `--format files`) | No (defaults to `./output`) | Valid path |
+| `--json-output-file` | Secure file path for JSON output (for `--format json`) | No | Valid path, only with `--format json` |
 | `--kdf` | Keystore KDF (`Scrypt` or `Pbkdf2`) | No (defaults to `Scrypt`) | `Scrypt` or `Pbkdf2` |
 | `--chain` | Network chain (`mainnet` or `hoodie`) | No (defaults to `mainnet`) | `mainnet` or `hoodie` |
 
 ⚠️ **Important Notes:**
 1. When generating new mnemonics, they are displayed with an IMPORTANT warning - store this securely!
 2. For recovery, you must use the exact same parameters as original generation.
-3. When using `--format json`, the output includes the mnemonic, keystores, deposit data, and private keys to stdout.
-4. When using `--format files`, files are written to the output directory and a summary is printed to stdout.
-5. If `--eth-amounts` contains a single value and `--validator-count` > 1, the total ETH will be distributed evenly.
-6. If `--validator-count` > 1, then `--eth-amounts` must be provided with either a single value or exactly that many values.
-7. The default `--bls-mode` is `02` (post-Pectra with execution withdrawal credentials).
-8. For `--bls-mode 01` (pre-Pectra), ETH amounts must be exactly 32 ETH per validator.
-9. For `--bls-mode 02` (post-Pectra), ETH amounts can range from 32 to 2048 ETH per validator.
+3. When using `--format json`, the output includes the mnemonic, keystores, deposit data, and private keys to stdout, unless `--json-output-file` is specified.
+4. When using `--json-output-file`, sensitive data is written to a file with secure permissions (0600) instead of stdout.
+5. When using `--format files`, files are written to the output directory and a summary is printed to stdout.
+6. If `--eth-amounts` contains a single value and `--validator-count` > 1, the total ETH will be distributed evenly.
+7. If `--validator-count` > 1, then `--eth-amounts` must be provided with either a single value or exactly that many values.
+8. The default `--bls-mode` is `02` (post-Pectra with execution withdrawal credentials).
+9. For `--bls-mode 01` (pre-Pectra), ETH amounts must be exactly 32 ETH per validator.
+10. For `--bls-mode 02` (post-Pectra), ETH amounts can range from 32 to 2048 ETH per validator.
 
 ## Development Status
 

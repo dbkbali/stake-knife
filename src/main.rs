@@ -92,6 +92,8 @@ enum WalletCommand {
         format: OutputMode,
         #[arg(long, default_value = "./output")]
         output_dir: PathBuf,
+        #[arg(long, help = "Path to write JSON output securely (only used with --format json)")]
+        json_output_file: Option<PathBuf>,
         #[arg(value_enum, long, default_value_t = KdfMode::Scrypt)]
         kdf: KdfMode,
         #[arg(long, value_enum, default_value_t = Chain::Mainnet)]
@@ -122,6 +124,7 @@ fn main() -> Result<()> {
                 validator_count,
                 format,
                 output_dir,
+                json_output_file,
                 kdf,
                 chain,
             } => {
@@ -140,6 +143,13 @@ fn main() -> Result<()> {
                 // 3. Validate eth_amounts and validator_count consistency
                 if eth_amounts.is_empty() && validator_count > 1 {
                     return Err(anyhow!("CLI Error: ETH amounts are required when validator_count > 1"));
+                }
+                
+                // 4. Validate json_output_file is only used with format=json
+                if let Some(_file_path) = &json_output_file {
+                    if format != OutputMode::Json {
+                        return Err(anyhow!("CLI Error: --json-output-file can only be used with --format json"));
+                    }
                 }
                 
                 if eth_amounts.len() > 1 && eth_amounts.len() != validator_count as usize {
@@ -384,7 +394,38 @@ fn main() -> Result<()> {
                                 },
                                 "message": message
                             });
-                            println!("{}", serde_json::to_string_pretty(&output)?);
+                            
+                            // Format the JSON output
+                            let json_output = serde_json::to_string_pretty(&output)?;
+                            
+                            if let Some(file_path) = json_output_file {
+                                // Ensure parent directories exist
+                                if let Some(parent) = file_path.parent() {
+                                    std::fs::create_dir_all(parent)
+                                        .map_err(|e| anyhow!("Failed to create directory {}: {}", parent.display(), e))?;
+                                }
+                                
+                                // Write to file with secure permissions
+                                use std::fs::OpenOptions;
+                                use std::os::unix::fs::OpenOptionsExt;
+                                use std::io::Write;
+                                
+                                let mut file = OpenOptions::new()
+                                    .write(true)
+                                    .create(true)
+                                    .truncate(true)
+                                    .mode(0o600) // Read/write for owner only
+                                    .open(&file_path)
+                                    .map_err(|e| anyhow!("Failed to create secure output file {}: {}", file_path.display(), e))?;
+                                
+                                file.write_all(json_output.as_bytes())
+                                    .map_err(|e| anyhow!("Failed to write to secure output file {}: {}", file_path.display(), e))?;
+                                
+                                println!("Secure JSON output written to: {}", file_path.display());
+                            } else {
+                                // If no file path provided, output to stdout as before
+                                println!("{}", json_output);
+                            }
                         }
                     }
                     
@@ -542,7 +583,38 @@ fn main() -> Result<()> {
                             },
                             "message": null
                         });
-                        println!("{}", serde_json::to_string_pretty(&output)?);
+                        
+                        // Format the JSON output
+                        let json_output = serde_json::to_string_pretty(&output)?;
+                        
+                        if let Some(file_path) = json_output_file {
+                            // Ensure parent directories exist
+                            if let Some(parent) = file_path.parent() {
+                                std::fs::create_dir_all(parent)
+                                    .map_err(|e| anyhow!("Failed to create directory {}: {}", parent.display(), e))?;
+                            }
+                            
+                            // Write to file with secure permissions
+                            use std::fs::OpenOptions;
+                            use std::os::unix::fs::OpenOptionsExt;
+                            use std::io::Write;
+                            
+                            let mut file = OpenOptions::new()
+                                .write(true)
+                                .create(true)
+                                .truncate(true)
+                                .mode(0o600) // Read/write for owner only
+                                .open(&file_path)
+                                .map_err(|e| anyhow!("Failed to create secure output file {}: {}", file_path.display(), e))?;
+                            
+                            file.write_all(json_output.as_bytes())
+                                .map_err(|e| anyhow!("Failed to write to secure output file {}: {}", file_path.display(), e))?;
+                            
+                            println!("Secure JSON output written to: {}", file_path.display());
+                        } else {
+                            // If no file path provided, output to stdout as before
+                            println!("{}", json_output);
+                        }
                     }
                 }
 
